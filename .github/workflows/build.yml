@@ -8,8 +8,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y lua5.3 nodejs
+      - run: wc -c parts/gz00 parts/gz01 parts/gz02 && sha256sum parts/gz00 parts/gz01 parts/gz02
       - name: Restore A17U source
-        run: cat parts/gz00 parts/gz01 parts/gz02 | base64 -d | gzip -d > a17u.lua
+        run: cat parts/gz00 parts/gz01 parts/gz02 | base64 -d > a17u.lua.gz && sha256sum a17u.lua.gz && gzip -d a17u.lua.gz
       - run: luac5.3 -p a17u.lua
       - run: luac5.3 -s -o a17u_raw.luac a17u.lua
       - run: node normalize_luac53_mt12.js a17u_raw.luac a17u.luac
