@@ -8,34 +8,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y lua5.3 nodejs
-      - name: Rebuild A17U source
-        shell: bash
-        run: |
-          base64 -d parts/q00 > a17t.lua
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('a17t.lua')
-          s=p.read_text()
-          start=s.index('local function rdmem()')
-          end=s.index('\nend\n\nlocal function trait',start)+5
-          new='''local function rdmem()
-           local f=io.open(MEMPATH,"r");if not f then return end;local tag=io.read(f,5);io.read(f,1);if tag~="AIC9Z"then io.close(f);return end
-           local n=0;local function it()local x=io.read(f,"*n");io.read(f,1);return x end;local function nx(d,a,b)local x=it();n=n+1;return clamp(x or d,a,b)end
-           nx(0,0,99);nx(0,0,99)
-           local function R(i,d,a,b)V[i]=nx(d,a or 0,b or 99)end
-           for i=127,130 do R(i,50,0,100)end;R(132,100,85,115);R(321,50);R(329,50);for i=560,562 do R(i,50)end;V[325]=V[560];V[326]=V[561];V[327]=V[562]
-           R(330,70);R(331,0);for i=333,335 do R(i,0)end;for i=336,340 do R(i,50,35,65)end;R(350,50);R(361,1,0,9);R(362,50);R(363,50);R(364,0,0,9);for i=370,375 do R(i,50)end;R(376,0)
-           R(500,85);R(503,0);R(510,20);R(511,20);R(520,20);R(521,80);R(530,0);R(533,50);R(542,70);R(545,50);R(550,0);R(551,50);R(505,V[57]);R(580,0);for _,i in ipairs({581,582,583,602,607,608,610,612})do R(i,50)end;u3(nx(505050,0,9999999),629);u3(nx(505050,0,9999999),632);u3(nx(500050,0,9999999),635)
-           local mk=it();if mk==151 then N[1]=clamp(it()or 0,0,9999);N[2]=c1((it()or 500)/1000);N[3]=1-N[2];for i=1,43 do nW[i]=clamp((it()or 0)/1000,-1.5,1.5)end;N[4]=1;local z=it();if z==152 then for k=1,10 do local q=it();VS[k]=q and q>=0 and q<1e5 and q or 55555 end;local z=it()or 505050;V[672]=m_floor(z/10000);V[673]=m_floor(z/100)%100;V[678]=z%100;local a=it();local b=it();if a then V[671]=m_floor(a/10000);V[674]=m_floor(a/100)%100;V[675]=a%100 end;if b then V[676]=m_floor(b/10000);V[677]=m_floor(b/100)%100 end end end
-           V[704]=nx(50);local ca=it();local cb=it();if ca then u3(ca,741)end;if cb then u3(cb,744)end;if V[333]>=90 then V[333]=m_floor(V[333]*.5)end;if V[334]>=90 then V[334]=m_floor(V[334]*.5)end;if V[335]>=90 then V[335]=m_floor(V[335]*.5)end
-           io.close(f);if n<34 then return end;memLoaded=1
-          end'''
-          s=s[:start]+new+s[end:]
-          s=s.replace('--a17t numeric state barrier','--a17u streaming memory loader',1)
-          s=s.replace('T(2,1,"A17T",Z+INVERS)','T(2,1,"A17U",Z+INVERS)',1)
-          s=s.replace('for i=127,177 do V[i]=nil end;for i=325,612 do V[i]=nil end\n','',1)
-          Path('a17u.lua').write_text(s)
-          PY
+      - name: Restore A17U source
+        run: cat parts/gz00 parts/gz01 parts/gz02 | base64 -d | gzip -d > a17u.lua
       - run: luac5.3 -p a17u.lua
       - run: luac5.3 -s -o a17u_raw.luac a17u.lua
       - run: node normalize_luac53_mt12.js a17u_raw.luac a17u.luac
