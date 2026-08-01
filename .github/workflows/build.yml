@@ -1,4 +1,4 @@
-name: build-a17u
+name: export-lua53
 on:
   pull_request:
   push:
@@ -7,18 +7,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y lua5.3 nodejs
-      - run: wc -c parts/gz00 parts/gz01 parts/gz02 && sha256sum parts/gz00 parts/gz01 parts/gz02
-      - name: Restore A17U source
-        run: cat parts/gz00 parts/gz01 parts/gz02 | base64 -d > a17u.lua.gz && sha256sum a17u.lua.gz && gzip -d a17u.lua.gz
-      - run: luac5.3 -p a17u.lua
-      - run: luac5.3 -s -o a17u_raw.luac a17u.lua
-      - run: node normalize_luac53_mt12.js a17u_raw.luac a17u.luac
-      - run: wc -c a17u.lua a17u_raw.luac a17u.luac && sha256sum a17u.lua a17u.luac
+      - run: sudo apt-get update && sudo apt-get install -y lua5.3
+      - run: |
+          mkdir compiler
+          cp /usr/bin/lua5.3 /usr/bin/luac5.3 compiler/
+          ldd /usr/bin/luac5.3
+          cp /lib/x86_64-linux-gnu/liblua5.3.so.0 compiler/ || true
+          cp /lib/x86_64-linux-gnu/libreadline.so.8 compiler/ || true
+          cp /lib/x86_64-linux-gnu/libtinfo.so.6 compiler/ || true
       - uses: actions/upload-artifact@v4
         with:
-          name: a17u
-          path: |
-            a17u.lua
-            a17u_raw.luac
-            a17u.luac
+          name: lua53-compiler
+          path: compiler/
