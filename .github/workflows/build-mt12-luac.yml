@@ -1,0 +1,79 @@
+name: Build MT12 EdgeTX LUAC
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'src/**/*.lua'
+      - 'compile_mt12.sh'
+      - 'normalize_luac53_mt12.js'
+      - '.github/workflows/build-mt12-luac.yml'
+  pull_request:
+    paths:
+      - 'src/**/*.lua'
+      - 'compile_mt12.sh'
+      - 'normalize_luac53_mt12.js'
+      - '.github/workflows/build-mt12-luac.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MAX_BYTES: '87000'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Lua 5.3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.3
+          luac5.3 -v
+          node --version
+
+      - name: Compile and normalize every Lua source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          chmod +x compile_mt12.sh
+          mkdir -p dist
+          mapfile -d '' files < <(find src -type f -name '*.lua' -print0 | sort -z)
+          if (( ${#files[@]} == 0 )); then
+            echo 'No .lua files found under src/' >&2
+            exit 1
+          fi
+          for source in "${files[@]}"; do
+            relative="${source#src/}"
+            output="dist/${relative%.lua}.luac"
+            mkdir -p "$(dirname "$output")"
+            ./compile_mt12.sh "$source" "$output"
+          done
+
+      - name: Build manifest
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          {
+            echo '# MT12 normalized builds'
+            echo
+            echo '| File | Bytes | SHA-256 |'
+            echo '|---|---:|---|'
+            while IFS= read -r -d '' file; do
+              bytes=$(wc -c < "$file" | tr -d '[:space:]')
+              sha=$(sha256sum "$file" | awk '{print $1}')
+              echo "| ${file#dist/} | $bytes | \`$sha\` |"
+            done < <(find dist -type f -name '*.luac' -print0 | sort -z)
+          } > dist/BUILD-MANIFEST.md
+
+      - name: Upload deployable MT12 files
+        uses: actions/upload-artifact@v5
+        with:
+          name: mt12-edgetx-luac
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
