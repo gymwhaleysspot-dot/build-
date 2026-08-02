@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101318">
+<title>MT12 EdgeTX Lua Builder</title>
+<style>
+:root{color-scheme:dark;--bg:#101318;--panel:#191e26;--line:#303947;--text:#f4f7fb;--muted:#9ca9ba;--accent:#ffb000;--good:#38d996;--bad:#ff6678}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#242b35 0,#101318 48%);color:var(--text);font:16px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
+main{width:min(760px,100%);margin:auto;padding:max(18px,env(safe-area-inset-top)) 16px max(30px,env(safe-area-inset-bottom))}
+h1{margin:8px 0 2px;font-size:clamp(28px,8vw,46px);line-height:1;letter-spacing:-.04em}.sub{margin:8px 0 22px;color:var(--muted)}
+.card{background:rgba(25,30,38,.94);border:1px solid var(--line);border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 14px 35px #0005}
+label{display:block;font-weight:750;margin:13px 0 7px}.hint{font-size:13px;color:var(--muted);margin-top:6px}
+input,textarea,button{font:inherit}input[type=text],input[type=password],input[type=number],textarea{width:100%;border:1px solid var(--line);border-radius:12px;background:#0e1217;color:var(--text);padding:13px;outline:none}input:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px #ffb00022}
+.file{display:flex;gap:12px;align-items:center;border:1px dashed #526073;border-radius:14px;padding:14px;background:#11161d}.file input{min-width:0}.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:550px){.row{grid-template-columns:1fr}}
+button{width:100%;border:0;border-radius:13px;padding:15px;font-weight:850;background:var(--accent);color:#171107;cursor:pointer;margin-top:16px}button:disabled{opacity:.45;cursor:not-allowed}.secondary{background:#2b3441;color:var(--text)}
+.status{white-space:pre-wrap;background:#0b0f14;border:1px solid var(--line);border-radius:13px;padding:14px;min-height:130px;max-height:320px;overflow:auto;font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}.ok{color:var(--good)}.err{color:var(--bad)}
+.meter{height:8px;border-radius:999px;background:#0b0f14;overflow:hidden;margin:12px 0}.meter>i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.badge{padding:6px 9px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:12px}.hide{display:none}.download{display:block;text-align:center;text-decoration:none;border-radius:13px;padding:15px;font-weight:850;background:var(--good);color:#07140f;margin-top:12px}
+code{color:#ffd06a}details{color:var(--muted)}summary{cursor:pointer;color:var(--text);font-weight:700}
+</style>
+</head>
+<body><main>
+<h1>MT12 Builder</h1>
+<p class="sub">Compile Lua 5.3, recursively normalize the bytecode for RadioMaster MT12 / EdgeTX, enforce size, and download the deployable artifact.</p>
+<div class="badges"><span class="badge">Lua 5.3</span><span class="badge">Stripped bytecode</span><span class="badge">MT12 4-byte format</span><span class="badge">87 KB guard</span></div>
+
+<section class="card">
+<label for="token">GitHub fine-grained token</label>
+<input id="token" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="github_pat_…">
+<p class="hint">Required permissions for <code>gymwhaleysspot-dot/build-</code>: Contents read/write and Actions read. The token stays in this page's memory and is never saved.</p>
+
+<div class="row">
+<div><label for="owner">Owner</label><input id="owner" type="text" value="gymwhaleysspot-dot" autocapitalize="none"></div>
+<div><label for="repo">Repository</label><input id="repo" type="text" value="build-" autocapitalize="none"></div>
+</div>
+<div class="row">
+<div><label for="branch">Build branch</label><input id="branch" type="text" value="mt12-compiler-normalizer" autocapitalize="none"></div>
+<div><label for="limit">Maximum output bytes</label><input id="limit" type="number" min="1000" max="200000" value="87000"></div>
+</div>
+
+<label>Lua source</label>
+<div class="file"><input id="file" type="file" accept=".lua,text/x-lua,text/plain"></div>
+<p id="fileInfo" class="hint">Choose one complete <code>.lua</code> file. MT12 filenames are limited here to six characters before <code>.lua</code>.</p>
+<button id="build" disabled>Compile for MT12</button>
+</section>
+
+<section id="progressCard" class="card hide">
+<strong id="phase">Preparing build</strong>
+<div class="meter"><i id="meter"></i></div>
+<div id="status" class="status"></div>
+<a id="download" class="download hide" href="#">Download MT12 build ZIP</a>
+<button id="reset" class="secondary hide">Build another file</button>
+</section>
+
+<section class="card">
+<details><summary>How this works</summary>
+<p>The page commits the selected source to a unique path under <code>src/web-builds/</code>. That push starts GitHub Actions. Ubuntu installs the real <code>luac5.3</code>, compiles with <code>-s</code>, runs the recursive MT12 normalizer, validates the bytecode header and size, creates a SHA-256 manifest, then returns a ZIP artifact.</p>
+<p>Deploy only the normalized <code>.luac</code> inside the ZIP. Do not deploy the source or raw desktop bytecode.</p>
+</details>
+</section>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id), api='https://api.github.com';
+const els={token:$('token'),owner:$('owner'),repo:$('repo'),branch:$('branch'),limit:$('limit'),file:$('file'),fileInfo:$('fileInfo'),build:$('build'),progress:$('progressCard'),phase:$('phase'),meter:$('meter'),status:$('status'),download:$('download'),reset:$('reset')};
+let selected=null, downloadUrl='';
+function log(msg,kind=''){const d=document.createElement('div');d.textContent=msg;if(kind)d.className=kind;els.status.appendChild(d);els.status.scrollTop=els.status.scrollHeight}
+function setPhase(text,pct){els.phase.textContent=text;els.meter.style.width=pct+'%'}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+function utf8b64(text){const bytes=new TextEncoder().encode(text);let s='',step=0x8000;for(let i=0;i<bytes.length;i+=step)s+=String.fromCharCode(...bytes.subarray(i,i+step));return btoa(s)}
+async function gh(path,opt={}){const token=els.token.value.trim();const headers={Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',Authorization:'Bearer '+token,...opt.headers};const r=await fetch(api+path,{...opt,headers});if(!r.ok){let detail='';try{const j=await r.json();detail=j.message||JSON.stringify(j)}catch{detail=await r.text()}throw new Error(`GitHub ${r.status}: ${detail}`)}if(r.status===204)return null;return r.json()}
+function validateFile(file){if(!file)return 'Choose a Lua file.';if(!/\.lua$/i.test(file.name))return 'The file must end in .lua.';const base=file.name.replace(/\.lua$/i,'');if(!/^[A-Za-z0-9_-]{1,6}$/.test(base))return 'Use 1–6 letters, numbers, _ or - before .lua.';if(file.size>900000)return 'Source is too large for this web builder.';return ''}
+els.file.addEventListener('change',()=>{selected=els.file.files[0]||null;const e=validateFile(selected);els.build.disabled=!!e||!selected;els.fileInfo.textContent=e||`${selected.name} — ${selected.size.toLocaleString()} source bytes`});
+els.reset.addEventListener('click',()=>location.reload());
+async function findRun(owner,repo,branch,commitSha,started){for(let n=0;n<90;n++){const data=await gh(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs?branch=${encodeURIComponent(branch)}&event=push&per_page=30`);const run=(data.workflow_runs||[]).find(x=>x.head_sha===commitSha||new Date(x.created_at).getTime()>=started-5000);if(run)return run;log('Waiting for GitHub Actions to register the build…');await sleep(3000)}throw new Error('No matching workflow run appeared.')}
+async function waitRun(owner,repo,run){for(let n=0;n<180;n++){const r=await gh(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${run.id}`);setPhase(r.status==='completed'?'Build finished':'Compiling and normalizing',r.status==='queued'?55:r.status==='in_progress'?72:88);log(`Run ${r.id}: ${r.status}${r.conclusion?' / '+r.conclusion:''}`);if(r.status==='completed'){if(r.conclusion!=='success')throw new Error(`Build failed with conclusion: ${r.conclusion}. Open run ${r.html_url}`);return r}await sleep(4000)}throw new Error('Build did not finish before the polling limit.')}
+async function build(){els.build.disabled=true;els.progress.classList.remove('hide');els.download.classList.add('hide');els.reset.classList.add('hide');els.status.textContent='';try{
+const token=els.token.value.trim(),owner=els.owner.value.trim(),repo=els.repo.value.trim(),branch=els.branch.value.trim(),limit=Number(els.limit.value),err=validateFile(selected);if(!token)throw new Error('Enter a GitHub token.');if(!owner||!repo||!branch)throw new Error('Owner, repository and branch are required.');if(err)throw new Error(err);if(!Number.isInteger(limit)||limit<1000)throw new Error('Maximum bytes is invalid.');
+setPhase('Reading Lua source',10);const source=await selected.text();if(!source.trim())throw new Error('Lua file is empty.');log(`Loaded ${selected.name} (${selected.size} bytes).`);
+setPhase('Checking repository access',20);await gh(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);log('Repository access confirmed.','ok');
+const stamp=new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14),base=selected.name.replace(/\.lua$/i,''),path=`src/web-builds/${base}-${stamp}.lua`;
+setPhase('Uploading source',35);const started=Date.now();const commit=await gh(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:`Build ${selected.name} for MT12`,content:utf8b64(source),branch})});const sha=commit.commit.sha;log(`Committed source: ${path}`,'ok');log(`Commit: ${sha}`);
+setPhase('Finding workflow run',48);let run=await findRun(owner,repo,branch,sha,started);log(`Workflow run found: ${run.id}`,'ok');run=await waitRun(owner,repo,run);
+setPhase('Locating artifact',92);const artifacts=await gh(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${run.id}/artifacts`);const art=(artifacts.artifacts||[]).find(a=>a.name==='mt12-edgetx-luac')||(artifacts.artifacts||[])[0];if(!art)throw new Error('Build succeeded but no artifact was found.');
+setPhase('Ready to download',100);downloadUrl=`${api}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/artifacts/${art.id}/zip`;els.download.href=downloadUrl;els.download.onclick=async ev=>{ev.preventDefault();try{log('Downloading artifact ZIP…');const r=await fetch(downloadUrl,{headers:{Accept:'application/vnd.github+json',Authorization:'Bearer '+els.token.value.trim(),'X-GitHub-Api-Version':'2022-11-28'}});if(!r.ok)throw new Error('Artifact download failed: '+r.status);const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`${base}-mt12.zip`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);log('Download started. Unzip it and deploy only the normalized .luac.','ok')}catch(e){log(e.message,'err')}};els.download.classList.remove('hide');els.reset.classList.remove('hide');log(`Artifact ready: ${art.name} (${art.size_in_bytes.toLocaleString()} ZIP bytes).`,'ok');log(`Configured deployment limit: ${limit.toLocaleString()} bytes. Note: workflow currently enforces its repository MAX_BYTES setting.`);
+}catch(e){setPhase('Build stopped',100);log(e.message||String(e),'err');els.reset.classList.remove('hide')}finally{els.build.disabled=false}}
+els.build.addEventListener('click',build);
+</script></body></html>
